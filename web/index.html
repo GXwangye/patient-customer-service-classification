@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>医院患者客服提问分类平台</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">Patient Service Query Classifier</p>
+        <h1>医院患者客服提问分类平台</h1>
+        <p class="subtitle">输入患者客服文本，输出门诊二分类、20类一级业务标签、置信度、分流建议和复核风险。</p>
+      </div>
+      <div class="engine-card" id="engineCard">
+        <span class="status-dot"></span>
+        <div>
+          <strong id="engineName">正在连接</strong>
+          <span id="engineNote">读取本地模型状态...</span>
+        </div>
+      </div>
+    </header>
+
+    <main class="main-grid">
+      <section class="panel input-panel">
+        <div class="panel-head">
+          <h2>文本分类</h2>
+          <span class="panel-note">单条文本实时推理</span>
+        </div>
+        <label class="textarea-label" for="queryText">患者客服提问</label>
+        <textarea id="queryText" rows="9" placeholder="例如：我预约了胃镜检查，现在想取消重新约时间，应该在哪里操作？"></textarea>
+        <div class="examples" id="examples"></div>
+        <div class="action-row">
+          <button class="primary-btn" id="classifyBtn" type="button">开始分类</button>
+          <button class="ghost-btn" id="clearBtn" type="button">清空</button>
+          <label>
+            Top K
+            <select id="topK">
+              <option value="3">3</option>
+              <option value="5" selected>5</option>
+              <option value="10">10</option>
+            </select>
+          </label>
+        </div>
+      </section>
+
+      <aside class="panel result-panel" id="resultPanel">
+        <div class="empty-state">
+          <h2>等待输入</h2>
+          <p>分类后这里会显示一级标签、置信度、门诊二分类和建议流转方向。</p>
+        </div>
+      </aside>
+    </main>
+
+    <section class="dashboard-grid">
+      <article class="panel">
+        <div class="panel-head">
+          <h2>Top K候选标签</h2>
+          <span class="panel-note">按模型或规则置信度排序</span>
+        </div>
+        <div class="bar-list" id="topKList"></div>
+      </article>
+
+      <article class="panel">
+        <div class="panel-head">
+          <h2>20类标签说明</h2>
+          <span class="panel-note">点击查看路由和边界</span>
+        </div>
+        <div class="label-grid" id="labelGrid"></div>
+      </article>
+    </section>
+
+    <section class="panel history-panel">
+      <div class="panel-head">
+        <h2>最近分类记录</h2>
+        <button class="ghost-btn small" id="clearHistoryBtn" type="button">清除记录</button>
+      </div>
+      <div class="history-list" id="historyList"></div>
+    </section>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
