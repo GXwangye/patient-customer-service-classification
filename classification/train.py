@@ -49,6 +49,11 @@ RANDOM_SEED = 42
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
+def write_json(path, payload):
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump(payload, handle, ensure_ascii=False, indent=2)
+
+
 class MedicalDataset(Dataset):
     def __init__(self, texts, labels, tokenizer, max_length):
         self.texts = texts
@@ -119,7 +124,7 @@ def main():
     df["label_encoded"] = le.fit_transform(df["final_label"])
     num_labels = len(le.classes_)
     label_mapping = {str(k): int(v) for k, v in zip(le.classes_, le.transform(le.classes_))}
-    json.dump(label_mapping, open(os.path.join(args.out, "label_mapping.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=2)
+    write_json(os.path.join(args.out, "label_mapping.json"), label_mapping)
 
     X = df["original_text"].tolist()
     y = df["label_encoded"].tolist()
@@ -170,7 +175,8 @@ def main():
 
     model.save_pretrained(args.out)
     tok.save_pretrained(args.out)
-    pickle.dump(le, open(os.path.join(args.out, "label_encoder.pkl"), "wb"))
+    with open(os.path.join(args.out, "label_encoder.pkl"), "wb") as handle:
+        pickle.dump(le, handle)
     print(f"[OK] 模型已保存: {args.out}")
 
     # 内部测试
@@ -185,12 +191,12 @@ def main():
     }
     print(f"[内部测试] 准确率 {int_metrics['accuracy']:.4f} | 宏F1 {int_metrics['f1_macro']:.4f}")
     print(classification_report(la, pr, target_names=le.classes_, digits=4))
-    json.dump(int_metrics, open(os.path.join(args.out, "internal_metrics.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=2)
+    write_json(os.path.join(args.out, "internal_metrics.json"), int_metrics)
 
     cm = confusion_matrix(la, pr)
     plt.figure(figsize=(12, 10))
     sns.heatmap(cm, annot=True, fmt="d", cmap="Blues", xticklabels=le.classes_, yticklabels=le.classes_)
-    plt.title("内部测试混淆矩阵")
+    plt.title("Internal test confusion matrix")
     plt.xticks(rotation=45, ha="right")
     plt.tight_layout()
     plt.savefig(os.path.join(args.out, "confusion_matrix.svg"), format="svg")
@@ -215,7 +221,7 @@ def main():
             "test_size": len(lax),
         }
         print(f"[外部验证] 准确率 {ext_metrics['accuracy']:.4f} | 宏F1 {ext_metrics['f1_macro']:.4f}")
-        json.dump(ext_metrics, open(os.path.join(args.out, "external_metrics.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=2)
+        write_json(os.path.join(args.out, "external_metrics.json"), ext_metrics)
 
     report = {
         "model_name": args.model_name,
@@ -225,7 +231,7 @@ def main():
         "external": ext_metrics,
         "label_mapping": label_mapping,
     }
-    json.dump(report, open(os.path.join(args.out, "experiment_report.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=2)
+    write_json(os.path.join(args.out, "experiment_report.json"), report)
     print("[OK] 训练完成，报告已保存。")
 
 

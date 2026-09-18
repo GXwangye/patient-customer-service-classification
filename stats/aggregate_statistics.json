@@ -1,0 +1,120 @@
+{
+  "_description": "Aggregate statistics for the hospital patient-service question corpus and the annotation and modelling stages. No free-text records are included. Counts are those reported in the accompanying manuscript.",
+  "corpus": {
+    "raw_records": 152369,
+    "evaluable_records": 151969,
+    "cleaned_valid_queries": 145128,
+    "removed_by_cleaning": 6841,
+    "empty_after_cleaning": 110,
+    "greeting_only_after_stopword_removal": 22,
+    "analysable_texts": 144996,
+    "duplicates_removed": 13885,
+    "unique_texts": 131111,
+    "collection_window": "2024-03 to 2026-04 (internal records end 2026-02)"
+  },
+  "annotation": {
+    "first_level_labels": 20,
+    "models_run_independently": [
+      "GLM",
+      "Qwen",
+      "LLaMA"
+    ],
+    "review_model": "DeepSeek (used only for texts without three-model consensus)",
+    "vote_patterns": {
+      "three_of_three_unanimous": 74606,
+      "two_of_three_majority": 44891,
+      "split_one_each": 11614
+    },
+    "consensus_levels": {
+      "high": 74606,
+      "medium": 44891,
+      "low": 11614
+    },
+    "accepted_without_human_review": 96104,
+    "human_verified": 8798,
+    "labelled_total": 104902,
+    "labelled_share_percent": 80.01,
+    "unlabelled_ambiguous": 26209,
+    "unlabelled_share_percent": 19.99
+  },
+  "inter_model_agreement": {
+    "fleiss_kappa": 0.6189,
+    "pairwise_cohen_kappa": {
+      "glm_qwen": 0.656,
+      "glm_llama": 0.5874,
+      "qwen_llama": 0.6186
+    },
+    "pairwise_agreement_percent": {
+      "glm_qwen": 70.7,
+      "glm_llama": 65.5,
+      "qwen_llama": 68.7
+    }
+  },
+  "label_distribution": {
+    "门诊服务": 44979,
+    "检验检查服务": 24230,
+    "药品服务": 7785,
+    "医疗费用管理": 7420,
+    "病案档案管理": 6880,
+    "医保服务": 6682,
+    "住院服务": 5341,
+    "便民服务": 4832,
+    "手术麻醉服务": 4334,
+    "远程医疗服务": 3373,
+    "健康管理服务": 3154,
+    "其他": 2531,
+    "信息化管理": 2228,
+    "行政后勤管理": 1954,
+    "投诉建议管理": 1700,
+    "康复护理服务": 1298,
+    "急诊服务": 1202,
+    "公共卫生服务": 779,
+    "人力资源管理": 383,
+    "质量安全管理": 26
+  },
+  "internal_split": {
+    "training": 83921,
+    "test": 20981,
+    "ratio": "8:2 stratified",
+    "labelled_total": 104902
+  },
+  "external_validation_set": {
+    "unique_before_dedup": 4091,
+    "after_l1_dedup": 3998,
+    "overlap_with_internal_removed": 665,
+    "after_dedup": 3333,
+    "eliminated": 505,
+    "final_external": 2828,
+    "vote_patterns_four_models": {
+      "four_unanimous": 1700,
+      "three_to_one": 839,
+      "two_to_one_to_one": 441,
+      "two_to_two": 289,
+      "split_one_each": 64
+    },
+    "retained_automatically": 2539,
+    "human_verified": 289
+  },
+  "modelling": {
+    "binary_outpatient_vs_other": {
+      "bert_internal": {
+        "accuracy": 0.9616,
+        "f1": 0.9486
+      },
+      "bert_external": {
+        "accuracy": 0.9547,
+        "f1": 0.9285
+      }
+    },
+    "twenty_class": {
+      "bert_internal": {
+        "accuracy": 0.9296,
+        "f1_macro": 0.8707
+      },
+      "bert_external": {
+        "accuracy": 0.9158,
+        "f1_macro": 0.8367
+      }
+    }
+  }
+}

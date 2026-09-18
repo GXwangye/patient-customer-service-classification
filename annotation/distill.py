@@ -11,21 +11,22 @@ distill.py — 标签蒸馏流水线（候选标签 → 一级/二级标签体�
 运行：python distill.py --input data/processed/distill_input/pre_annotated_data.csv
 """
 
-import json
-import os
 import argparse
 import itertools
-import time
+import json
+import os
 import random
+import re
+import time
+import warnings
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
+from threading import Lock
 
 import pandas as pd
 import requests
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from threading import Lock
 
-import warnings
 warnings.filterwarnings("ignore")
 
 
@@ -40,7 +41,6 @@ DEFAULT_INPUT = "data/processed/distill_input/pre_annotated_data.csv"
 DEFAULT_OUTPUT = "data/processed/distillation"
 BATCH_SIZE = 30
 MAX_WORKERS = 8
-TEST_MODE = False
 
 lock = Lock()
 stats = {"total": 0, "success": 0, "fail": 0}
@@ -76,13 +76,10 @@ def call_llm(prompt, model_name, endpoint_cycle, max_retries=3):
                 content = m.group()
             parsed = json.loads(content)
             return parsed if isinstance(parsed, (dict, list)) else None
-        except (json.JSONDecodeError, Exception):  # noqa: BLE001
+        except Exception:
             if attempt < max_retries - 1:
                 time.sleep(2)
     return None
-
-
-import re  # noqa: E402  (used above; kept central for clarity)
 
 
 def save_checkpoint(data, filename, out_dir):

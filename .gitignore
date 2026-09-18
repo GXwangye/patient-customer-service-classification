@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.pyc
+*.egg-info/
+.venv/
+venv/
+
+# Secrets / local config
+.env
+*.local
+
+# Model artifacts (too large for GitHub; host on Zenodo / Hugging Face)
+final_model/
+*.safetensors
+*.bin
+checkpoints/
+checkpoint_*.json
+
+# Intermediate data & outputs
+data/raw/
+data/processed/
+*.csv.tmp
+
+# Editor / OS
+.idea/
+.vscode/
+.DS_Store

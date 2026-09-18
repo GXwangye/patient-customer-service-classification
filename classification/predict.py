@@ -12,34 +12,37 @@ predict.py — 使用训练好的 BERT 模型对客服文本做一级标签推�
 输出：CSV 含 text, label_id, label, confidence, topk（Top-K 候选）。
 """
 
-import os
-import json
 import argparse
+import os
 import pickle
+import sys
 
-import pandas as pd
 import numpy as np
+import pandas as pd
 import torch
-from transformers import BertTokenizer
+from transformers import BertForSequenceClassification, BertTokenizer
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 
 def load_model(model_dir):
-    from transformers import BertForSequenceClassification
-    tok = BertTokenizer.from_pretrained(model_dir)
+    tokenizer = BertTokenizer.from_pretrained(model_dir)
     model = BertForSequenceClassification.from_pretrained(model_dir).to(device)
     model.eval()
-    le = pickle.load(open(os.path.join(model_dir, "label_encoder.pkl"), "rb"))
-    return model, tok, le
+    with open(os.path.join(model_dir, "label_encoder.pkl"), "rb") as handle:
+        encoder = pickle.load(handle)
+    return model, tokenizer, encoder
 
 
-def predict_texts(model, tok, le, texts, max_length=128, topk=3):
-    enc = tok(texts, truncation=True, padding="max_length", max_length=max_length, return_tensors="pt")
+def predict_texts(model, tokenizer, encoder, texts, max_length=128, topk=3):
+    encoded = tokenizer(texts, truncation=True, padding="max_length", max_length=max_length, return_tensors="pt")
     with torch.no_grad():
-        out = model(input_ids=enc["input_ids"].to(device), attention_mask=enc["attention_mask"].to(device))
-        probs = torch.softmax(out.logits, dim=1).cpu().numpy()
-    classes = le.classes_
+        logits = model(
+            input_ids=encoded["input_ids"].to(device),
+            attention_mask=encoded["attention_mask"].to(device),
+        ).logits
+        probs = torch.softmax(logits, dim=1).cpu().numpy()
+    classes = encoder.classes_
     rows = []
     for i, p in enumerate(probs):
         order = np.argsort(p)[::-1]
@@ -64,7 +67,7 @@ def main():
     ap.add_argument("--max-length", type=int, default=128)
     args = ap.parse_args()
 
-    model, tok, le = load_model(args.model_dir)
+    model, tokenizer, encoder = load_model(args.model_dir)
 
     if args.text is not None:
         texts = [sys.stdin.read().strip()] if args.text == "-" else [args.text]
@@ -77,14 +80,11 @@ def main():
     else:
         raise ValueError("请通过 --input 或 --text 提供输入")
 
-    rows = predict_texts(model, tok, le, texts, args.max_length, args.topk)
+    rows = predict_texts(model, tokenizer, encoder, texts, args.max_length, args.topk)
     out_df = pd.DataFrame(rows)
     out_df.to_csv(args.out, index=False, encoding="utf-8-sig")
     print(out_df[["text", "label", "confidence", "topk"]].to_string(index=False))
     print(f"\n[OK] 预测结果已写入 {args.out}")
-
-
-import sys  # noqa: E402  (used above for stdin)
 
 
 if __name__ == "__main__":

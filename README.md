@@ -1,131 +1,236 @@
-# 医院患者客服提问分类（多 LLM 协同标注 + BERT）
+# Multi-LLM Collaborative Annotation and BERT Classification for Hospital Patient Service Question Categorization
 
-本仓库是论文 **《多大型语言模型协同标注与 BERT 分类的医院患者客服提问分类研究》** 的方法本体代码与最小示例数据，用于复现"从大规模含噪患者客服文本到可训练、可审计业务标签"的标注—训练—推理流水线。
+**a development and validation study** · method code and sample data
 
-核心思想：用多个相互独立的大模型（GLM / Qwen / LLaMA）作"共识 + 分歧"双信号源，经 DeepSeek 复核与人工审核形成确定标签，再以 `bert-base-chinese` 训练判别式分类器，将标签知识固化为可批量推理的模型。
+[中文说明 / Chinese documentation](README.zh-CN.md)
 
-> 本仓库**不含**原始数据集（约 14.5 万条，已发布至 Zenodo）与训练好的模型权重（约 409 MB，受 GitHub 单文件 100 MB 限制，另行托管）。示例数据仅 40 条（每类 2 条），见 `data/examples/`。
+This repository accompanies the manuscript *Multi-LLM Collaborative Annotation and BERT Classification for Hospital Patient Service Question Categorization: a development and validation study*. It contains the method code and a minimal corpus sample, covering the path from noisy hospital patient-service transcripts to a trainable, auditable label system.
+
+Each de-identified text is annotated independently by three language models (GLM, Qwen, LLaMA). The votes are aggregated, and the texts that do not reach three-model consensus are reviewed by DeepSeek and then verified by a human. The resulting labels train a `bert-base-chinese` classifier that turns the label system into a model which can be applied in batch.
 
 ---
 
-## 目录结构
+## What this repository does not contain
+
+| Item | Reason |
+|---|---|
+| The full corpus | 131,111 unique texts carrying patient health information; released only as the de-identified sample described below |
+| Trained model weights | about 409 MB, above the GitHub per-file limit; available on request |
+
+---
+
+## Pipeline
 
 ```
-patient-customer-service-classification/
-├── README.md
-├── LICENSE
+raw transcripts
+  → preprocessing/clean.py        extract the patient-side query
+  → preprocessing/desensitize.py  replace directly identifying information
+  → preprocessing/dedup.py        stop-word normalisation, de-duplication, uid
+  → annotation/annotate.py        three models annotate each text independently
+  → annotation/distill.py         candidate labels → 20 first-level labels
+  → classification/train.py       BERT fine-tuning and evaluation
+  → classification/predict.py     batch inference
+```
+
+Corpus counts at each stage:
+
+| Stage | Texts |
+|---|---|
+| Raw records collected | 152,369 |
+| Evaluable records | 151,969 |
+| Valid queries after cleaning | 145,128 |
+| Analysable after removing empty and greeting-only texts | 144,996 |
+| Unique texts after de-duplication (the analysis corpus) | **131,111** |
+
+Annotation outcome over the 131,111 unique texts:
+
+| Vote pattern | Texts | Share |
+|---|---|---|
+| Unanimous (3 of 3) | 74,606 | 56.9% |
+| Majority (2 of 1) | 44,891 | 34.2% |
+| Split (1 each) | 11,614 | 8.9% |
+
+Of these, 96,104 were accepted without human review and 8,798 were human-verified, giving **104,902 labelled texts** (80.0%). The remaining 26,209 (19.99%) stayed ambiguous and were not used for training. Agreement between the three models was Fleiss κ = 0.6189.
+
+---
+
+## Repository layout
+
+```
+.
+├── README.md                       this file
+├── README.zh-CN.md                 Chinese documentation
+├── LICENSE                         MIT
 ├── requirements.txt
-├── .gitignore
-├── annotation/                 # 多 LLM 协同标注 + 标签蒸馏
-│   ├── prompts.md              # 三类标注提示词模板（候选归纳/一级分类/低置信复核）
-│   ├── annotate.py             # 单模型一级标签标注（轮询本地 Ollama 端点）
-│   └── distill.py              # 标签蒸馏流水线（候选 → 一级/二级标签体系）
-├── classification/             # BERT 训练与推理
-│   ├── label_mapping.json      # 20 个一级标签 ↔ 编号
-│   ├── train.py                # BERT 多分类训练（含内部测试 + 外部验证）
-│   └── predict.py              # 推理脚本（单条 / 批量 CSV，输出 Top-K）
-├── web/                        # 分类应用演示（离线模型封装为交互工作台）
-│   ├── index.html
-│   ├── app.js
-│   └── styles.css
+├── preprocessing/
+│   ├── clean.py                    query extraction (local Ollama)
+│   ├── desensitize.py              PII replacement (local Ollama)
+│   └── dedup.py                    stop-word normalisation, de-duplication, uid
+├── annotation/
+│   ├── prompts.md                  the three annotation prompt templates
+│   ├── annotate.py                 single-model first-level annotation
+│   └── distill.py                  label distillation (candidates → 20 labels)
+├── classification/
+│   ├── label_mapping.json          the 20 first-level labels ↔ ids
+│   ├── train.py                    BERT training, internal test, external validation
+│   └── predict.py                  batch or single-text inference
+├── stats/
+│   └── aggregate_statistics.json   corpus, annotation, agreement and modelling counts
 └── data/
     └── examples/
-        └── example_texts.csv   # 40 条示例（每类 2 条，已再脱敏）
+        └── example_texts.csv       250 sampled texts (id, label, label_id, text)
 ```
 
 ---
 
-## 安装
+## Installation
 
 ```bash
 pip install -r requirements.txt
 ```
 
-- 标注 / 蒸馏依赖本地 **Ollama** 部署的 GLM / Qwen / LLaMA / DeepSeek（4 卡并行时端点为 `11434–11437`）。
-- 训练推荐 **GPU**；`bert-base-chinese` 默认从 Hugging Face 自动下载。
+The preprocessing and annotation steps call models served by a local **Ollama** instance. The default configuration polls four endpoints (`11434`–`11437`) concurrently; change `--endpoints` to match your deployment. Training expects a **GPU**; `bert-base-chinese` is downloaded from Hugging Face on first use.
 
 ---
 
-## 快速开始
+## Quick start
 
-### 1. 多 LLM 协同标注（每个模型各跑一次）
+### 1. Extract patient queries
 
 ```bash
-# 三个模型分别运行，仅改 --model
+python preprocessing/clean.py \
+    --input  data/raw/raw_transcripts.csv \
+    --output data/processed/cleaned.csv \
+    --model  llama3.1:latest
+```
+
+Output columns: `original_text, cleaned_text, is_valid, is_complete, reason`.
+
+### 2. Replace identifying information
+
+```bash
+python preprocessing/desensitize.py \
+    --input      data/processed/cleaned.csv \
+    --output     data/processed/desensitized.csv \
+    --texts-only data/processed/desensitized_texts_only.csv \
+    --model      llama3.1:latest
+```
+
+The prompt replaces only four categories of directly identifying information (personal name, phone number, national ID, medical-record number) and instructs the model to leave the text unchanged when it is not certain. Output columns: `original_text, desensitized_text, sensitive_types, reason`, where `sensitive_types` is a JSON array such as `["姓名"]` or `[]`.
+
+### 3. De-duplicate and assign uids
+
+```bash
+python preprocessing/dedup.py \
+    --input  data/processed/desensitized_texts_only.csv \
+    --output data/processed/dedup_clean_corpus.csv \
+    --report data/processed/dedup_report.json
+```
+
+Normalisation strips a data-driven stop-word list (43 phrases and 12 particles) longest-phrase-first, then de-duplicates on the normalised key and assigns `uid` in order of first appearance. Texts that are empty before or after stop-word removal are dropped. This step is what turns 145,128 valid queries into the 131,111-text analysis corpus. Output columns: `uid, original_text, norm_key`.
+
+### 4. Annotate with three models
+
+```bash
 python annotation/annotate.py --model qwen3:latest \
-       --input data/raw/desensitized_texts_only.csv \
+       --input data/processed/desensitized_texts_only.csv \
        --output-dir data/processed/annotation
 python annotation/annotate.py --model glm4:9b   --input ...
 python annotation/annotate.py --model llama3.1  --input ...
 ```
 
-输出 `data/processed/annotation/annotated_<model>.csv`（`original_text, label, reason`）。
-三模型结果经投票聚合：完全一致直接采纳、2:1 多数暂采纳、1:1:1 进入 DeepSeek 复核与人工审核（复核脚本在此流水线中复用 `annotate.py` 的接口与 `prompts.md` 的 Prompt 3）。
+Each run is independent and writes `annotated_<model>.csv`. The prompts used are documented in `annotation/prompts.md`.
 
-### 2. 标签蒸馏（候选 → 规范标签体系）
+### 5. Distil the label system
 
 ```bash
 python annotation/distill.py --input data/processed/distill_input/pre_annotated_data.csv
 ```
 
-将 LLM 归纳的细粒度候选（约 1,059 个）经六节点蒸馏收敛为 20 个一级标签（`classification/label_mapping.json`）。
+Distils roughly 1,059 candidate descriptions into the 20 first-level labels listed in `classification/label_mapping.json`.
 
-### 3. BERT 训练
+### 6. Train BERT
 
 ```bash
 python classification/train.py \
-       --data data/processed/voting_results.csv \
-       --out final_model \
+       --data     data/processed/voting_results.csv \
+       --out      final_model \
        --external data/processed/external_validation.csv
 ```
 
-- 输入需含 `original_text` 与 `final_label`；"待定"样本自动排除，空标签归入"其他"。
-- 二分类（门诊服务 vs 其他）使用同一脚本、不同输入标签列即可。
-- 类别权重默认关闭（论文消融显示其未提升总体 F1，仅改变精确率—召回权衡）。
+The input needs `original_text` and `final_label`; undetermined texts are dropped and empty labels fall back to "其他". The binary task (outpatient service vs other) uses the same script with a different label column. Class weighting is off by default, as it did not improve overall F1 in the ablation.
 
-### 4. 推理
+### 7. Inference
 
 ```bash
 python classification/predict.py --model-dir final_model \
        --input data/examples/example_texts.csv --out preds.csv
-# 单条
+
 echo "星期六还能取药吗" | python classification/predict.py --model-dir final_model --text -
 ```
 
-### 5. Web 演示
+---
 
-`web/` 将离线模型封装为可交互分类工作台（输出 20 类一级标签、门诊服务二分类、Top-K 候选及置信度、建议流转部门）。本地起一个静态服务即可：
+## Reported performance
 
-```bash
-cd web && python -m http.server 8000   # 浏览器打开 http://127.0.0.1:8000
-```
+| Task | Split | Accuracy | F1 |
+|---|---|---|---|
+| Binary (outpatient vs other) | Internal test | 0.9616 | 0.9486 |
+| Binary (outpatient vs other) | External validation | 0.9547 | 0.9285 |
+| Twenty-class | Internal test | 0.9296 | 0.8707 (macro) |
+| Twenty-class | External validation | 0.9158 | 0.8367 (macro) |
 
-> 演示仅用于流程验证与内部评测；真实部署效果（工作量、响应时间、患者体验与误分流责任）尚未纳入前瞻性评估。
+The internal split is 8:2 stratified (83,921 training / 20,981 test) over the 104,902 labelled texts. The external set is 2,828 texts from a later period. Further counts are in `stats/aggregate_statistics.json`.
 
 ---
 
-## 数据说明与隐私声明
+## Data and privacy
 
-- **示例数据** `data/examples/example_texts.csv`：从脱敏数据集（`desensitized_texts_only.csv`，依据 GB/T 39725-2020 在医院数据源头脱敏）中**真实抽取**每类 2 条，并在发布前**再次清洗**残留地名、院名、人名、日期与号码等准标识符，逐条人工复核。样本均为简短、非 stigmatizing 的咨询片段，不含可直接识别个人的信息。
-- **原始数据集**（约 14.5 万条）体量较大且含患者健康信息，不随本仓库发布，已托管至 Zenodo（发布渠道同既有数据集）。
-- **模型权重**（约 409 MB）不纳入本仓库，请联系作者获取。
-- 若需将本代码用于其他机构数据，请遵循所在机构的伦理与隐私规范，并重新执行脱敏与标注流程。
-
----
-
-## 标签体系（20 个一级业务标签）
-
-门诊服务、住院服务、急诊服务、医保服务、药品服务、检验检查服务、手术麻醉服务、康复护理服务、健康管理服务、远程医疗服务、公共卫生服务、医疗费用管理、病案档案管理、行政后勤管理、人力资源管理、信息化管理、质量安全管理、便民服务、投诉建议管理、其他。
+- **Sample data.** `data/examples/example_texts.csv` holds 250 texts sampled from the de-identified corpus, stratified across the 20 labels. Before release each text was re-checked for residual place names, institution names, personal names, dates and numbers, and read through by hand. All samples are short, non-stigmatising service enquiries and contain no directly identifying information.
+- **Full corpus.** Not released. The 131,111 unique texts carry patient health information and are covered by the data-source institution's privacy and security policy.
+- **Licence of use.** Applying this code to another institution's data requires that institution's ethics and privacy clearance and a fresh run of the desensitisation and annotation steps.
 
 ---
 
-## 许可与引用
+## First-level label system
 
-- 代码采用 **MIT License**。
-- 若本研究对您的工作有帮助，请引用对应论文（录用后补充 DOI / 期刊信息）。
+The corpus is annotated into 20 mutually exclusive first-level business labels. The Chinese names below are the keys used in `classification/label_mapping.json`; the English names are those defined in the manuscript.
+
+| id | Label (zh) | Label (en) |
+|---|---|---|
+| 0 | 人力资源管理 | Human Resources Management |
+| 1 | 住院服务 | Inpatient Services |
+| 2 | 便民服务 | Convenience Services |
+| 3 | 信息化管理 | Information Systems Management |
+| 4 | 健康管理服务 | Health Management Services |
+| 5 | 公共卫生服务 | Public Health Services |
+| 6 | 其他 | Other |
+| 7 | 医保服务 | Medical Insurance Services |
+| 8 | 医疗费用管理 | Medical Expense Management |
+| 9 | 康复护理服务 | Rehabilitation and Nursing Services |
+| 10 | 急诊服务 | Emergency Services |
+| 11 | 手术麻醉服务 | Surgery and Anesthesia Services |
+| 12 | 投诉建议管理 | Complaint and Suggestion Management |
+| 13 | 检验检查服务 | Laboratory and Examination Services |
+| 14 | 病案档案管理 | Medical Records and Archive Management |
+| 15 | 药品服务 | Pharmacy Services |
+| 16 | 行政后勤管理 | Administration and Logistics Management |
+| 17 | 质量安全管理 | Quality and Safety Management |
+| 18 | 远程医疗服务 | Telemedicine Services |
+| 19 | 门诊服务 | Outpatient Services |
+
+The authoritative machine-readable mapping is `classification/label_mapping.json`.
 
 ---
 
-## 主要依赖
+## Licence and citation
+
+Code is released under the **MIT License**. Please cite the accompanying manuscript if this work is useful to you. The archived release is available through Zenodo:
+
+- **Concept DOI (all versions, always resolves to the latest):** [10.5281/zenodo.22143320](https://doi.org/10.5281/zenodo.22143320)
+
+---
+
+## Dependencies
 
 `pandas` · `numpy` · `requests` · `torch` · `transformers` · `scikit-learn` · `matplotlib` · `seaborn` · `tqdm`

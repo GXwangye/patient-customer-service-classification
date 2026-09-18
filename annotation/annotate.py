@@ -1,31 +1,33 @@
 """
-annotate.py — 多大型语言模型协同标注（单模型标注脚本）
+annotate.py — 多模型协同标注（单模型标注脚本）
 
-对脱敏后的患者客服咨询文本，调用本地 Ollama 部署的大模型（GLM / Qwen / LLaMA / DeepSeek）
-输出 20 个一级业务标签中的唯一标签。三个模型各自独立运行本脚本（仅改 MODEL_NAME），
-其输出经投票、分歧识别与复核后形成训练标签（见论文 §2.3–§2.4）。
+对脱敏后的患者客服咨询文本，调用本地 Ollama 部署的大模型输出 20 个一级业务标签
+中的唯一标签。GLM、Qwen、LLaMA 三个模型各自独立运行本脚本（仅改 --model），
+标注结果经票型聚合后，未取得三模型一致者交由 DeepSeek 复核（见论文 Section 2.3–2.4）。
 
 依赖：pip install -r requirements.txt
-运行：python annotate.py --model qwen3:latest --input data/raw/desensitized_texts_only.csv
+运行：python annotate.py --model qwen3:latest --input data/processed/desensitized_texts_only.csv
 说明：
   - 默认对 4 个本地 Ollama 端口（11434–11437）做轮询并发；可按显存改为单端口。
   - 支持断点续跑（checkpoint）与批次保存。
   - 输出 CSV 列：original_text, label, reason。
 """
 
-import json
-import time
-import os
 import argparse
 import itertools
+import json
+import os
 import re
-import requests
-from concurrent.futures import ThreadPoolExecutor, as_completed
-from threading import Lock
+import time
+from collections import Counter
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
+from threading import Lock
 
 import pandas as pd
+import requests
 import warnings
+
 warnings.filterwarnings("ignore")
 
 
@@ -36,12 +38,12 @@ DEFAULT_ENDPOINTS = [
     "http://127.0.0.1:11436/api/generate",
     "http://127.0.0.1:11437/api/generate",
 ]
-DEFAULT_INPUT = "data/raw/desensitized_texts_only.csv"
+DEFAULT_INPUT = "data/processed/desensitized_texts_only.csv"
 DEFAULT_OUTPUT_DIR = "data/processed/annotation"
 MAX_WORKERS = 16
 BATCH_SIZE = 20
 MAX_RETRIES = 2
-SAMPLE_SIZE = None  # 测试填 100；全量置 None
+SAMPLE_SIZE = None  # 调试时填 100，留空表示处理全部
 
 
 # ===================== 一级标签分类提示词 =====================
@@ -298,7 +300,6 @@ def main():
 
     save_results(store, output_path)
     final = pd.read_csv(output_path, encoding="utf-8-sig")
-    from collections import Counter
     cnt = Counter(final["label"].tolist())
     valid = len(final[final["label"] != ""])
     print(f"[OK] 完成：成功 {valid}/{len(final)} ({valid/len(final)*100:.1f}%)")
